@@ -56,6 +56,35 @@ Pour compiler ce depot isolement, cloner
 [AugatonLib](https://github.com/Augaton/AugatonLib) a cote,
 ou passer `-p:CommonProject=chemin/vers/AugatonLib.csproj`.
 
+## Installation depuis une release
+
+Chaque tag `v*` declenche une release qui publie une archive **contenant deja
+AugatonLib**. Extraire `SupplyDrop.zip` dans `.config/EXILED/` :
+
+```
+Plugins/7777/SupplyDrop.dll
+Plugins/dependencies/AugatonLib.dll
+```
+
+Les DLL sont aussi publiees separement pour une mise a jour ciblee.
+
+Si plusieurs plugins de la collection sont installes, garder la version
+d'AugatonLib la plus recente : elle est partagee par tous.
+
+## Integration continue
+
+| Workflow | Declencheur | Role |
+|---|---|---|
+| `build` | push sur `main`, pull request | Compile le plugin contre AugatonLib et verifie la sortie |
+| `release` | tag `v*` | Compile, empaquette avec AugatonLib et publie la release |
+
+La CI recupere AugatonLib par `actions/checkout` sur le depot
+[Augaton/AugatonLib](https://github.com/Augaton/AugatonLib), branche `main` par
+defaut. Le declenchement manuel de `release` permet de fixer une autre version
+via l'entree `augatonlib_ref`.
+
+Gitleaks tourne sur chaque push et bloque en cas de secret detecte.
+
 ## Note de portage
 
 La version 3.x ciblait EXILED 3.0.0-alpha.83. La reecriture corrige plusieurs
