@@ -2,7 +2,11 @@ using System;
 using System.Collections.Generic;
 using Exiled.API.Features;
 using SupplyDrop.API;
+using AugatonLib.Bus;
+using AugatonLib.Runtime;
+using PlayerRoles;
 using SupplyDrop.Handlers;
+using ExiledRound = Exiled.API.Features.Round;
 using ServerEvents = Exiled.Events.Handlers.Server;
 
 namespace SupplyDrop
@@ -18,6 +22,8 @@ namespace SupplyDrop
         public override Version Version => new Version(4, 3, 0);
 
         public override Version RequiredExiledVersion => new Version(9, 14, 2);
+
+        public const string BusOwner = "SupplyDrop";
 
         public static Plugin Instance { get; private set; }
 
@@ -39,6 +45,10 @@ namespace SupplyDrop
             ServerEvents.RestartingRound += serverHandlers.OnRestartingRound;
             ServerEvents.WaitingForPlayers += serverHandlers.OnWaitingForPlayers;
 
+            PluginBus.Subscribe(BusOwner, BusTopics.TeamWiped, OnTeamWiped);
+
+            PluginDirectory.Register(this, Capability.Bus);
+
             base.OnEnabled();
         }
 
@@ -51,11 +61,48 @@ namespace SupplyDrop
 
             Service?.Stop();
 
+            PluginBus.UnsubscribeOwner(BusOwner);
+            PluginDirectory.Unregister(this);
+
             serverHandlers = null;
             Service = null;
             Instance = null;
 
             base.OnDisabled();
+        }
+
+        private void OnTeamWiped(BusMessage message)
+        {
+            try
+            {
+                if (message is null || !message.TryGet(out Team team))
+                    return;
+
+                if (Config.TeamWipeDrops is null
+                    || !Config.TeamWipeDrops.TryGetValue(team, out string key)
+                    || string.IsNullOrEmpty(key))
+                {
+                    return;
+                }
+
+                if (!ExiledRound.IsStarted || ExiledRound.IsEnded)
+                    return;
+
+                DropProfile profile = Service?.Find(key);
+
+                if (profile is null)
+                {
+                    Log.Warn($"team_wipe_drops pointe vers le profil inconnu \"{key}\" pour l'equipe {team}.");
+                    return;
+                }
+
+                Log.Info($"[SupplyDrop] Extinction de {team} : declenchement du largage \"{profile.Key}\".");
+                Service.Trigger(profile, true);
+            }
+            catch (Exception e)
+            {
+                Log.Error($"OnTeamWiped: {e}");
+            }
         }
 
         private void ValidateConfig()

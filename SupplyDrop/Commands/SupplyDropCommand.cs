@@ -1,4 +1,5 @@
 using System;
+using AugatonLib.Commands;
 using CommandSystem;
 using Exiled.Permissions.Extensions;
 
@@ -18,6 +19,8 @@ namespace SupplyDrop.Commands
 
         public override void LoadGeneratedCommands()
         {
+            RegisterCommand(new CollectionCommand("supplydrop.call"));
+
             RegisterCommand(new CallCommand());
             RegisterCommand(new ListCommand());
         }

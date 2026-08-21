@@ -237,6 +237,8 @@ namespace SupplyDrop.API
 
                 PlaceBeacon(profile, forcedPosition ?? ResolveBeaconPosition(profile, anchor));
 
+                AugatonLib.Bus.PluginBus.Publish(AugatonLib.Bus.BusTopics.SupplyDropped, "SupplyDrop", profile.Key);
+
                 if (config.LogDrops)
                 {
                     Log.Info(

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using Exiled.API.Interfaces;
+using PlayerRoles;
 using SupplyDrop.API;
 
 namespace SupplyDrop
@@ -33,5 +34,8 @@ namespace SupplyDrop
 
         [Description("Profils de largage. Ajouter une entree avec une cle inutilisee cree un nouveau type de largage.")]
         public List<DropProfile> Profiles { get; set; } = DefaultProfiles.Create();
+
+        [Description("Largage declenche quand TeamGenocide annonce l'extinction d'une equipe. Cle d'equipe vers cle de profil, vide = desactive.")]
+        public Dictionary<Team, string> TeamWipeDrops { get; set; } = new Dictionary<Team, string>();
     }
 }
