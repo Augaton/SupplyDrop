@@ -1,9 +1,9 @@
-# SupplyDrop 4.0
+# SupplyDrop 4.3
 
 > Portage EXILED 9.14.2 d'un plugin de **Wafel, KadeDev, JesusQC**. Depot non
 > affilie aux auteurs d'origine. Voir [NOTICE.md](NOTICE.md) pour l'attribution.
 
-Largages de ravitaillement periodiques pour le Foudroyeur et l'Insurrection du Chaos.
+Largages de ravitaillement periodiques pour le MTF et l'Insurrection du Chaos.
 
 **EXILED 9.14.2** — `dotnet build -c Release SupplyDrop/SupplyDrop.csproj`
 
@@ -14,7 +14,9 @@ un type de largage complet : contenu, horaires, positions, annonce, balise.
 Ajouter une entree avec une cle inutilisee cree un nouveau type de largage sans
 recompiler.
 
-Deux profils par defaut : `mtf` et `chaos`.
+Deux profils par defaut : `mtf` et `chaos`. Les deux embarquent **deux pieces**
+depuis la 4.3 : BetterCoinflipsRewritten detruit la piece a l'usage, les
+largages sont donc une source de reappro.
 
 | Cle | Role |
 |---|---|
@@ -22,9 +24,11 @@ Deux profils par defaut : `mtf` et `chaos`.
 | `interval_seconds` | Delai entre deux largages du meme profil |
 | `announcement_lead_seconds` | Temps entre l'annonce et l'apparition des objets |
 | `max_drops_per_round` | Plafond par round. `-1` = illimite |
-| `ammo/armor/item/weapon_position` | Coordonnees par categorie. `0,0,0` = spawn du role de repli |
+| `fallback_role` | Role dont le point d'apparition sert d'ancre au largage |
+| `ammo/armor/item/weapon_position` | Coordonnees fixes par categorie. `0,0,0` = ancre du role de repli |
 | `scatter_radius` | Dispersion horizontale autour du point, en metres |
 | `enable_beacon` | Halo lumineux sur la zone de largage |
+| `custom_items` | Objets personnalises ajoutes au largage. Voir plus bas |
 | `cassie_announcement` | Annonce C.A.S.S.I.E. Vide = desactivee |
 
 ## Commandes
@@ -34,8 +38,80 @@ Deux profils par defaut : `mtf` et `chaos`.
 | `supplydrop list` | `supplydrop.call` | Liste les profils, leurs horaires et leur etat |
 | `supplydrop call <profil>` | `supplydrop.call` | Declenche un largage immediatement, avec annonce |
 | `supplydrop call <profil> silencieux` | `supplydrop.call` | Largage sans annonce ni C.A.S.S.I.E |
+| `supplydrop call <profil> ici` | `supplydrop.call` | Largage aux pieds de l'appelant, pour verifier le contenu |
 
-Alias `sd`. Chaque appel est trace avec l'auteur.
+Alias `sd`. Les modificateurs se cumulent : `sd call mtf silencieux ici`. Chaque
+appel est trace avec l'auteur et la position forcee eventuelle.
+
+## Objets personnalises (compatibilite optionnelle)
+
+Chaque profil peut ajouter au largage des objets enregistres par un autre plugin
+via **Exiled.CustomItems** : les SCP-500 modifies de
+[SCP500s](https://github.com/Augaton/SCP500s), mais aussi n'importe quel
+`CustomItem` d'un plugin tiers.
+
+```yaml
+custom_items:
+  is_enabled: true
+  draws: 2              # nombre de tirages par largage
+  chance: 60            # chance en pourcent que chaque tirage aboutisse
+  allow_duplicates: false
+  pool:
+    - reference: SCP500-Blindage
+      weight: 15
+    - reference: SCP500-Chirurgien
+      weight: 15
+```
+
+`reference` accepte le **nom affiche** de l'objet (`SCP500-Blindage`) ou son
+**identifiant numerique** (`18`). Le nom est celui enregistre par le plugin
+proprietaire : pour SCP500s, c'est `display_name`, pas la cle interne.
+
+Les deux profils par defaut arrivent avec un pool oriente : soin et equipement
+pour le MTF, mobilite et agressivite pour l'Insurrection. Avec `draws: 2` et
+`chance: 60`, un largage contient en moyenne **une pilule et quart**.
+
+### La dependance reste optionnelle
+
+Rien n'est requis a l'installation. `Exiled.CustomItems` n'est sonde qu'au
+premier besoin, et tout le code typé qui le touche vit dans
+`API/CustomItemBridge.cs`, isole du reste :
+
+- assembly absente → le pool est ignore en silence, le largage classique
+  fonctionne normalement ;
+- assembly presente mais une reference du pool n'existe pas → avertissement
+  **une seule fois par round**, l'entree est ecartee du tirage ;
+- la sonde est reevaluee a chaque debut de round, donc un `reload` qui ajoute
+  SCP500s est pris en compte sans redemarrage.
+
+`supplydrop list` affiche l'etat resolu du pool de chaque profil et nomme les
+references introuvables. C'est le moyen le plus rapide de verifier qu'un nom de
+pilule est correctement orthographie.
+
+## Position du largage
+
+Le largage n'utilise **aucune coordonnee en dur**. L'ancre est le point
+d'apparition reel du role indique par `fallback_role` : le MTF se pose la ou
+arrive une vague MTF, l'Insurrection la ou arrive son fourgon. Ces points sont
+lus dans la scene chargee, ils suivent donc les remaniements de carte de
+Northwood sans intervention.
+
+Ordre de resolution de l'ancre :
+
+1. `fallback_role.GetRandomSpawnLocation()`
+2. `SpawnLocationType.InsideSurfaceNuke`
+3. `RoomType.Surface`
+
+Si les trois echouent, le largage est **annule avec un `Log.Error`** plutot que
+depose en `0,0,0`, c'est-a-dire dans le vide sous la carte.
+
+Renseigner `ammo/armor/item/weapon_position` force des coordonnees fixes pour la
+categorie concernee et court-circuite l'ancre. A n'utiliser que pour un point
+precis verifie en jeu : une coordonnee obsolete envoie le contenu hors de la
+carte sans aucun message d'erreur, puisque la valeur est syntaxiquement valide.
+
+`spawn_height_offset` (config globale, 0,5 m par defaut) souleve les objets pour
+qu'ils ne traversent pas le sol au moment de l'apparition.
 
 ## Dependances
 
@@ -111,6 +187,25 @@ Gitleaks scanne l'historique complet a chaque push et bloque en cas de secret
 detecte. Il est invoque en binaire plutot que via son action GitHub : l'action
 calcule une plage de commits `<precedent>^..<actuel>` qui echoue sur le commit
 initial d'un depot.
+
+## Note de version 4.2
+
+- Compatibilite optionnelle avec les `CustomItem` d'EXILED, donc avec les
+  SCP-500 modifies de SCP500s. Tirage pondere, sans doublon par defaut.
+- `supplydrop list` diagnostique le pool d'objets personnalises.
+- Un profil peut n'avoir que des objets personnalises, sans `items`.
+
+## Note de version 4.1
+
+- Les coordonnees en dur des deux profils par defaut, heritees de la 3.x, sont
+  supprimees. Elles designaient des points de la surface d'une version anterieure
+  du jeu et prenaient le pas sur le point de repli, qui n'etait donc jamais
+  utilise : tout le contenu partait hors de la carte, balise comprise, sans la
+  moindre erreur en console.
+- Un largage sans position exploitable echoue desormais bruyamment.
+- `spawn_height_offset` evite le clipping a travers le sol.
+- `supplydrop call <profil> ici` permet de verifier un profil sans se deplacer.
+- L'helicoptere du profil `mtf` est nomme « helicoptere MTF ».
 
 ## Note de portage
 

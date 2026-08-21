@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Exiled.API.Enums;
 using Exiled.API.Extensions;
 using Exiled.API.Features;
 using Exiled.API.Features.Pickups;
@@ -18,6 +19,8 @@ namespace SupplyDrop.API
         private readonly Config config;
         private readonly Dictionary<string, DropState> states = new Dictionary<string, DropState>();
         private readonly List<CoroutineHandle> pending = new List<CoroutineHandle>(8);
+        private readonly List<CustomDropItem> customPool = new List<CustomDropItem>(16);
+        private readonly HashSet<string> unresolvedCustomItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private CoroutineHandle scheduler;
         private bool running;
@@ -29,6 +32,8 @@ namespace SupplyDrop.API
             Stop();
 
             states.Clear();
+            unresolvedCustomItems.Clear();
+            CustomItemBridge.Reset();
 
             foreach (DropProfile profile in config.Profiles)
             {
@@ -57,6 +62,8 @@ namespace SupplyDrop.API
 
             pending.Clear();
             states.Clear();
+            customPool.Clear();
+            unresolvedCustomItems.Clear();
         }
 
         public DropProfile Find(string key)
@@ -70,14 +77,14 @@ namespace SupplyDrop.API
             return null;
         }
 
-        public void Trigger(DropProfile profile, bool announce)
+        public void Trigger(DropProfile profile, bool announce, Vector3? forcedPosition = null)
         {
             if (profile is null)
                 return;
 
             if (!announce)
             {
-                Deliver(profile);
+                Deliver(profile, forcedPosition);
                 return;
             }
 
@@ -85,11 +92,11 @@ namespace SupplyDrop.API
 
             if (profile.AnnouncementLeadSeconds <= 0f)
             {
-                Deliver(profile);
+                Deliver(profile, forcedPosition);
                 return;
             }
 
-            pending.Add(Timing.CallDelayed(profile.AnnouncementLeadSeconds, () => Deliver(profile)));
+            pending.Add(Timing.CallDelayed(profile.AnnouncementLeadSeconds, () => Deliver(profile, forcedPosition)));
         }
 
         private IEnumerator<float> Schedule()
@@ -154,55 +161,82 @@ namespace SupplyDrop.API
             }
         }
 
-        private void Deliver(DropProfile profile)
+        private void Deliver(DropProfile profile, Vector3? forcedPosition)
         {
             try
             {
                 if (!ExiledRound.IsStarted || ExiledRound.IsEnded)
                     return;
 
-                if (profile.Items is null || profile.Items.Count == 0)
+                bool hasItems = profile.Items is not null && profile.Items.Count > 0;
+                bool hasCustomItems = profile.CustomItems is not null
+                    && profile.CustomItems.IsEnabled
+                    && profile.CustomItems.Pool is not null
+                    && profile.CustomItems.Pool.Count > 0;
+
+                if (!hasItems && !hasCustomItems)
                 {
                     Log.Warn($"Le profil de largage \"{profile.Key}\" ne contient aucun objet.");
                     return;
                 }
 
-                Vector3 fallback = ResolveFallback(profile);
+                Vector3 anchor = forcedPosition ?? ResolveAnchor(profile);
+
+                if (anchor == Vector3.zero)
+                {
+                    Log.Error(
+                        $"Largage \"{profile.Key}\" annule : aucune position exploitable. " +
+                        $"Le role de repli {profile.FallbackRole} n'expose aucun point d'apparition et aucune " +
+                        "coordonnee n'est configuree dans le profil.");
+                    return;
+                }
+
+                Vector3 lift = Vector3.up * config.SpawnHeightOffset;
                 int spawned = 0;
                 int attempted = 0;
 
-                foreach (DropItem entry in profile.Items)
+                if (hasItems)
                 {
-                    if (entry is null || entry.Item == ItemType.None || entry.Quantity <= 0)
-                        continue;
-
-                    Vector3 origin = ResolvePosition(profile, entry.Item, fallback);
-                    int chance = Mathf.Clamp(entry.Chance, 0, 100);
-
-                    for (int i = 0; i < entry.Quantity; i++)
+                    foreach (DropItem entry in profile.Items)
                     {
-                        if (spawned >= config.MaxItemsPerDrop)
-                        {
-                            Log.Warn($"Largage \"{profile.Key}\" tronque a {config.MaxItemsPerDrop} objets (max_items_per_drop).");
-                            goto done;
-                        }
-
-                        attempted++;
-
-                        if (UnityEngine.Random.Range(0, 100) >= chance)
+                        if (entry is null || entry.Item == ItemType.None || entry.Quantity <= 0)
                             continue;
 
-                        Pickup.CreateAndSpawn(entry.Item, Scatter(origin, profile.ScatterRadius), null);
-                        spawned++;
+                        Vector3 origin = forcedPosition ?? ResolvePosition(profile, entry.Item, anchor);
+                        int chance = Mathf.Clamp(entry.Chance, 0, 100);
+
+                        for (int i = 0; i < entry.Quantity; i++)
+                        {
+                            if (spawned >= config.MaxItemsPerDrop)
+                            {
+                                Log.Warn($"Largage \"{profile.Key}\" tronque a {config.MaxItemsPerDrop} objets (max_items_per_drop).");
+                                goto done;
+                            }
+
+                            attempted++;
+
+                            if (UnityEngine.Random.Range(0, 100) >= chance)
+                                continue;
+
+                            Pickup.CreateAndSpawn(entry.Item, Scatter(origin, profile.ScatterRadius) + lift, null);
+                            spawned++;
+                        }
                     }
                 }
 
                 done:
 
-                PlaceBeacon(profile, fallback);
+                Vector3 customOrigin = forcedPosition ?? ResolvePosition(profile, ItemType.SCP500, anchor);
+                int custom = DeliverCustomItems(profile, customOrigin, lift);
+
+                PlaceBeacon(profile, forcedPosition ?? ResolveBeaconPosition(profile, anchor));
 
                 if (config.LogDrops)
-                    Log.Info($"[SupplyDrop] Largage \"{profile.Key}\" : {spawned}/{attempted} objets places.");
+                {
+                    Log.Info(
+                        $"[SupplyDrop] Largage \"{profile.Key}\" : {spawned}/{attempted} objets places " +
+                        $"et {custom} objet(s) personnalise(s), autour de {Describe(anchor)}.");
+                }
             }
             catch (Exception e)
             {
@@ -210,7 +244,94 @@ namespace SupplyDrop.API
             }
         }
 
-        private static Vector3 ResolvePosition(DropProfile profile, ItemType type, Vector3 fallback)
+        private int DeliverCustomItems(DropProfile profile, Vector3 origin, Vector3 lift)
+        {
+            CustomDrop custom = profile.CustomItems;
+
+            if (custom is null || !custom.IsEnabled || custom.Draws <= 0)
+                return 0;
+
+            if (custom.Pool is null || custom.Pool.Count == 0)
+                return 0;
+
+            if (!CustomItemBridge.Available)
+            {
+                if (config.Debug)
+                    Log.Debug($"Exiled.CustomItems absent, le pool du profil \"{profile.Key}\" est ignore.");
+
+                return 0;
+            }
+
+            customPool.Clear();
+
+            foreach (CustomDropItem entry in custom.Pool)
+            {
+                if (entry is null || entry.Weight <= 0 || string.IsNullOrEmpty(entry.Reference))
+                    continue;
+
+                if (!CustomItemBridge.Exists(entry.Reference))
+                {
+                    if (unresolvedCustomItems.Add(entry.Reference))
+                        Log.Warn($"Objet personnalise \"{entry.Reference}\" introuvable, il est retire du pool du profil \"{profile.Key}\".");
+
+                    continue;
+                }
+
+                customPool.Add(entry);
+            }
+
+            if (customPool.Count == 0)
+                return 0;
+
+            int chance = Mathf.Clamp(custom.Chance, 0, 100);
+            int draws = Mathf.Min(custom.Draws, custom.AllowDuplicates ? custom.Draws : customPool.Count);
+            int placed = 0;
+
+            for (int i = 0; i < draws; i++)
+            {
+                if (UnityEngine.Random.Range(0, 100) >= chance)
+                    continue;
+
+                CustomDropItem pick = PickWeighted();
+
+                if (pick is null)
+                    break;
+
+                if (!custom.AllowDuplicates)
+                    customPool.Remove(pick);
+
+                if (CustomItemBridge.Spawn(pick.Reference, Scatter(origin, profile.ScatterRadius) + lift))
+                    placed++;
+            }
+
+            customPool.Clear();
+            return placed;
+        }
+
+        private CustomDropItem PickWeighted()
+        {
+            int total = 0;
+
+            foreach (CustomDropItem entry in customPool)
+                total += entry.Weight;
+
+            if (total <= 0)
+                return null;
+
+            int roll = UnityEngine.Random.Range(0, total);
+
+            foreach (CustomDropItem entry in customPool)
+            {
+                roll -= entry.Weight;
+
+                if (roll < 0)
+                    return entry;
+            }
+
+            return customPool[customPool.Count - 1];
+        }
+
+        private static Vector3 ResolvePosition(DropProfile profile, ItemType type, Vector3 anchor)
         {
             if (type.IsAmmo() && profile.AmmoPosition != Vector3.zero)
                 return profile.AmmoPosition;
@@ -227,15 +348,31 @@ namespace SupplyDrop.API
                 return profile.ItemPosition;
             }
 
-            return fallback;
+            return anchor;
         }
 
-        private static Vector3 ResolveFallback(DropProfile profile)
+        private static Vector3 ResolveBeaconPosition(DropProfile profile, Vector3 anchor)
+            => profile.ItemPosition != Vector3.zero ? profile.ItemPosition : anchor;
+
+        private static Vector3 ResolveAnchor(DropProfile profile)
         {
             SpawnLocation location = profile.FallbackRole.GetRandomSpawnLocation();
 
-            return location is null ? Vector3.zero : location.Position;
+            if (location is not null && location.Position != Vector3.zero)
+                return location.Position;
+
+            Vector3 nuke = SpawnLocationType.InsideSurfaceNuke.GetPosition();
+
+            if (nuke != Vector3.zero)
+                return nuke;
+
+            Room surface = Room.Get(RoomType.Surface);
+
+            return surface is null ? Vector3.zero : surface.Position;
         }
+
+        private static string Describe(Vector3 position)
+            => $"{position.x:0.0} / {position.y:0.0} / {position.z:0.0}";
 
         private static Vector3 Scatter(Vector3 origin, float radius)
         {
@@ -247,14 +384,9 @@ namespace SupplyDrop.API
             return new Vector3(origin.x + offset.x, origin.y, origin.z + offset.y);
         }
 
-        private void PlaceBeacon(DropProfile profile, Vector3 fallback)
+        private void PlaceBeacon(DropProfile profile, Vector3 position)
         {
-            if (!profile.EnableBeacon)
-                return;
-
-            Vector3 position = profile.ItemPosition != Vector3.zero ? profile.ItemPosition : fallback;
-
-            if (position == Vector3.zero)
+            if (!profile.EnableBeacon || position == Vector3.zero)
                 return;
 
             if (!ColorUtility.TryParseHtmlString(profile.BeaconColor, out Color color))

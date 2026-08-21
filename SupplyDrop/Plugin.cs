@@ -15,7 +15,7 @@ namespace SupplyDrop
 
         public override string Prefix => "supplydrop";
 
-        public override Version Version => new Version(4, 0, 0);
+        public override Version Version => new Version(4, 3, 0);
 
         public override Version RequiredExiledVersion => new Version(9, 14, 2);
 
@@ -84,6 +84,12 @@ namespace SupplyDrop
                 Config.MaxItemsPerDrop = 60;
             }
 
+            if (Config.SpawnHeightOffset < 0f || Config.SpawnHeightOffset > 10f)
+            {
+                Log.Warn($"SpawnHeightOffset ({Config.SpawnHeightOffset}) hors plage, remis a 0.5.");
+                Config.SpawnHeightOffset = 0.5f;
+            }
+
             if (Config.Profiles is null || Config.Profiles.Count == 0)
             {
                 Log.Warn("Aucun profil de largage configure, le plugin ne fera rien.");
@@ -131,6 +137,56 @@ namespace SupplyDrop
 
                 if (profile.ScatterRadius < 0f)
                     profile.ScatterRadius = 0f;
+
+                ValidateCustomItems(profile);
+            }
+        }
+
+        private static void ValidateCustomItems(DropProfile profile)
+        {
+            CustomDrop custom = profile.CustomItems;
+
+            if (custom is null)
+                return;
+
+            if (custom.Draws < 0)
+            {
+                Log.Warn($"CustomItems.Draws du profil \"{profile.Key}\" negatif, remis a 0.");
+                custom.Draws = 0;
+            }
+
+            if (custom.Draws > 10)
+            {
+                Log.Warn($"CustomItems.Draws du profil \"{profile.Key}\" ({custom.Draws}) trop eleve, plafonne a 10.");
+                custom.Draws = 10;
+            }
+
+            if (custom.Chance < 0 || custom.Chance > 100)
+            {
+                Log.Warn($"CustomItems.Chance du profil \"{profile.Key}\" ({custom.Chance}) hors plage, remis a 100.");
+                custom.Chance = 100;
+            }
+
+            if (custom.Pool is null)
+                return;
+
+            foreach (CustomDropItem entry in custom.Pool)
+            {
+                if (entry is null)
+                    continue;
+
+                if (string.IsNullOrEmpty(entry.Reference))
+                {
+                    Log.Warn($"Une entree du pool d'objets personnalises du profil \"{profile.Key}\" n'a pas de reference, elle sera ignoree.");
+                    entry.Weight = 0;
+                    continue;
+                }
+
+                if (entry.Weight >= 0)
+                    continue;
+
+                Log.Warn($"Poids negatif pour \"{entry.Reference}\" dans le profil \"{profile.Key}\", remis a 0.");
+                entry.Weight = 0;
             }
         }
     }

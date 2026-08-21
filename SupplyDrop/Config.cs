@@ -28,6 +28,9 @@ namespace SupplyDrop
         [Description("Nombre maximum d'objets places par largage, garde-fou contre une config aberrante.")]
         public int MaxItemsPerDrop { get; set; } = 60;
 
+        [Description("Hauteur en metres ajoutee au point de largage pour eviter que les objets traversent le sol.")]
+        public float SpawnHeightOffset { get; set; } = 0.5f;
+
         [Description("Profils de largage. Ajouter une entree avec une cle inutilisee cree un nouveau type de largage.")]
         public List<DropProfile> Profiles { get; set; } = DefaultProfiles.Create();
     }

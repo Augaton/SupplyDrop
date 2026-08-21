@@ -24,7 +24,7 @@ namespace SupplyDrop.Commands
 
         protected override bool ExecuteParent(ArraySegment<string> arguments, ICommandSender sender, out string response)
         {
-            response = "Sous-commandes : call <profil> [silencieux], list.";
+            response = "Sous-commandes : call <profil> [silencieux] [ici], list.";
             return false;
         }
 

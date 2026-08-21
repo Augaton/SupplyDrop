@@ -44,19 +44,19 @@ namespace SupplyDrop.API
         [Description("Faction associee, utilisee uniquement pour l'affichage. NtfWave ou ChaosWave.")]
         public SpawnableFaction Faction { get; set; } = SpawnableFaction.NtfWave;
 
-        [Description("Role dont l'emplacement de spawn sert de position de repli quand une coordonnee vaut 0.")]
+        [Description("Role dont le point d'apparition sert d'ancre de largage. Utilise tant qu'aucune coordonnee explicite n'est renseignee.")]
         public RoleTypeId FallbackRole { get; set; } = RoleTypeId.NtfPrivate;
 
-        [Description("Position des munitions. 0,0,0 = position de repli.")]
+        [Description("Coordonnees fixes des munitions. 0,0,0 = ancre du role de repli, valeur recommandee.")]
         public Vector3 AmmoPosition { get; set; } = Vector3.zero;
 
-        [Description("Position des armures. 0,0,0 = position de repli.")]
+        [Description("Coordonnees fixes des armures. 0,0,0 = ancre du role de repli, valeur recommandee.")]
         public Vector3 ArmorPosition { get; set; } = Vector3.zero;
 
-        [Description("Position des objets divers. 0,0,0 = position de repli.")]
+        [Description("Coordonnees fixes des objets divers. 0,0,0 = ancre du role de repli, valeur recommandee.")]
         public Vector3 ItemPosition { get; set; } = Vector3.zero;
 
-        [Description("Position des armes. 0,0,0 = position de repli.")]
+        [Description("Coordonnees fixes des armes. 0,0,0 = ancre du role de repli, valeur recommandee.")]
         public Vector3 WeaponPosition { get; set; } = Vector3.zero;
 
         [Description("Rayon horizontal de dispersion autour de la position, en metres. 0 = empilement exact.")]
@@ -73,5 +73,8 @@ namespace SupplyDrop.API
 
         [Description("Contenu du largage.")]
         public List<DropItem> Items { get; set; } = new List<DropItem>();
+
+        [Description("Objets personnalises ajoutes au largage, via Exiled.CustomItems. Compatibilite optionnelle.")]
+        public CustomDrop CustomItems { get; set; } = new CustomDrop();
     }
 }

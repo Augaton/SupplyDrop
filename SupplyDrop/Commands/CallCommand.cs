@@ -2,6 +2,7 @@ using System;
 using CommandSystem;
 using Exiled.API.Features;
 using SupplyDrop.API;
+using UnityEngine;
 using ExiledRound = Exiled.API.Features.Round;
 
 namespace SupplyDrop.Commands
@@ -12,7 +13,7 @@ namespace SupplyDrop.Commands
 
         public string[] Aliases => new[] { "c" };
 
-        public string Description => "Declenche un largage immediatement. Usage : supplydrop call <profil> [silencieux]";
+        public string Description => "Declenche un largage immediatement. Usage : supplydrop call <profil> [silencieux] [ici]";
 
         public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
         {
@@ -26,7 +27,7 @@ namespace SupplyDrop.Commands
 
             if (arguments.Count < 1)
             {
-                response = "Usage : supplydrop call <profil> [silencieux]";
+                response = "Usage : supplydrop call <profil> [silencieux] [ici]";
                 return false;
             }
 
@@ -53,20 +54,40 @@ namespace SupplyDrop.Commands
             }
 
             bool announce = true;
+            Vector3? forcedPosition = null;
+            Player caller = Player.Get(sender);
 
-            if (arguments.Count >= 2)
+            for (int i = 1; i < arguments.Count; i++)
             {
-                string mode = arguments.At(1).ToLowerInvariant();
-                announce = mode != "silencieux" && mode != "silent" && mode != "quiet";
+                string mode = arguments.At(i).ToLowerInvariant();
+
+                if (mode == "silencieux" || mode == "silent" || mode == "quiet")
+                {
+                    announce = false;
+                    continue;
+                }
+
+                if (mode != "ici" && mode != "here")
+                    continue;
+
+                if (caller is null)
+                {
+                    response = "Le mode \"ici\" n'est disponible que depuis un client en jeu.";
+                    return false;
+                }
+
+                forcedPosition = caller.Position;
             }
 
-            plugin.Service.Trigger(profile, announce);
+            plugin.Service.Trigger(profile, announce, forcedPosition);
 
-            string author = Player.Get(sender) is Player player
-                ? $"{player.Nickname} ({player.UserId})"
+            string author = caller is not null
+                ? $"{caller.Nickname} ({caller.UserId})"
                 : sender.LogName;
 
-            Log.Info($"[SupplyDrop] {author} a declenche le largage \"{profile.Key}\" (annonce : {announce}).");
+            Log.Info(
+                $"[SupplyDrop] {author} a declenche le largage \"{profile.Key}\" " +
+                $"(annonce : {announce}, position forcee : {forcedPosition?.ToString() ?? "non"}).");
 
             response = plugin.Translation.DropCalled.Replace("%KEY%", profile.Key);
             return true;
