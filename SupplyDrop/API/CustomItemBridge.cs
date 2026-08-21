@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Exiled.API.Features;
 using UnityEngine;
@@ -65,6 +66,25 @@ namespace SupplyDrop.API
             }
         }
 
+        public static int Collect(List<string> destination, List<ItemType> baseItems)
+        {
+            if (destination is null)
+                return 0;
+
+            if (!Available)
+                return 0;
+
+            try
+            {
+                return CollectCore(destination, baseItems);
+            }
+            catch (Exception e)
+            {
+                Log.Error($"CustomItemBridge.Collect: {e}");
+                return 0;
+            }
+        }
+
         private static bool IsAssemblyLoaded()
         {
             foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -88,6 +108,26 @@ namespace SupplyDrop.API
                 Log.Warn($"Exiled.CustomItems present mais inutilisable, les objets personnalises sont desactives : {e.Message}");
                 return false;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static int CollectCore(List<string> destination, List<ItemType> baseItems)
+        {
+            int added = 0;
+
+            foreach (CustomItem item in CustomItem.Registered)
+            {
+                if (item is null || string.IsNullOrEmpty(item.Name))
+                    continue;
+
+                if (baseItems is not null && baseItems.Count > 0 && !baseItems.Contains(item.Type))
+                    continue;
+
+                destination.Add(item.Name);
+                added++;
+            }
+
+            return added;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

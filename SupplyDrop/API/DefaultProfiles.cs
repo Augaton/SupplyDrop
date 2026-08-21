@@ -44,19 +44,14 @@ namespace SupplyDrop.API
                     CustomItems = new CustomDrop
                     {
                         IsEnabled = true,
+                        Source = CustomDropSource.Registered,
+                        BaseItems = new List<ItemType> { ItemType.SCP500 },
+                        Excluded = new List<string>(),
+                        DefaultWeight = 10,
                         Draws = 2,
                         Chance = 60,
                         AllowDuplicates = false,
-                        Pool = new List<CustomDropItem>
-                        {
-                            new CustomDropItem { Reference = "SCP500-Blindage", Weight = 15 },
-                            new CustomDropItem { Reference = "SCP500-Chirurgien", Weight = 15 },
-                            new CustomDropItem { Reference = "SCP500-Vitalite", Weight = 15 },
-                            new CustomDropItem { Reference = "SCP500-Endurance", Weight = 10 },
-                            new CustomDropItem { Reference = "SCP500-Nyctalope", Weight = 10 },
-                            new CustomDropItem { Reference = "SCP500-Arsenal", Weight = 6 },
-                            new CustomDropItem { Reference = "SCP500-Panacee", Weight = 4 },
-                        },
+                        Pool = new List<CustomDropItem>(),
                     },
                 },
                 new DropProfile
@@ -90,19 +85,14 @@ namespace SupplyDrop.API
                     CustomItems = new CustomDrop
                     {
                         IsEnabled = true,
+                        Source = CustomDropSource.Registered,
+                        BaseItems = new List<ItemType> { ItemType.SCP500 },
+                        Excluded = new List<string>(),
+                        DefaultWeight = 10,
                         Draws = 2,
                         Chance = 60,
                         AllowDuplicates = false,
-                        Pool = new List<CustomDropItem>
-                        {
-                            new CustomDropItem { Reference = "SCP500-Adrenaline", Weight = 15 },
-                            new CustomDropItem { Reference = "SCP500-Regeneration", Weight = 15 },
-                            new CustomDropItem { Reference = "SCP500-Sonic", Weight = 12 },
-                            new CustomDropItem { Reference = "SCP500-Shadow", Weight = 10 },
-                            new CustomDropItem { Reference = "SCP500-Plume", Weight = 10 },
-                            new CustomDropItem { Reference = "SCP500-Juggernaut", Weight = 6 },
-                            new CustomDropItem { Reference = "SCP500-Passe-partout", Weight = 4 },
-                        },
+                        Pool = new List<CustomDropItem>(),
                     },
                 },
             };

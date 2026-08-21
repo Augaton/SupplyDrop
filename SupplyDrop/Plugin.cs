@@ -167,6 +167,26 @@ namespace SupplyDrop
                 custom.Chance = 100;
             }
 
+            if (custom.DefaultWeight < 1)
+            {
+                Log.Warn($"CustomItems.DefaultWeight du profil \"{profile.Key}\" ({custom.DefaultWeight}) invalide, remis a 1.");
+                custom.DefaultWeight = 1;
+            }
+
+            if (custom.Source != CustomDropSource.Registered && (custom.Pool is null || custom.Pool.Count == 0))
+            {
+                Log.Warn(
+                    $"CustomItems.Source du profil \"{profile.Key}\" vaut {custom.Source} mais le pool est vide. " +
+                    "Passer la source a Registered pour un tirage entierement aleatoire.");
+            }
+
+            if (custom.Source != CustomDropSource.Pool && (custom.BaseItems is null || custom.BaseItems.Count == 0))
+            {
+                Log.Warn(
+                    $"CustomItems.BaseItems du profil \"{profile.Key}\" est vide : la decouverte automatique " +
+                    "retiendra tous les objets personnalises, pas uniquement les SCP-500.");
+            }
+
             if (custom.Pool is null)
                 return;
 

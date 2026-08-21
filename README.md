@@ -50,43 +50,60 @@ via **Exiled.CustomItems** : les SCP-500 modifies de
 [SCP500s](https://github.com/Augaton/SCP500s), mais aussi n'importe quel
 `CustomItem` d'un plugin tiers.
 
+Par defaut le tirage est **entierement aleatoire**. Rien n'est liste a la main :
+le plugin interroge le registre d'Exiled.CustomItems a chaque largage et retient
+tout ce qui est bati sur `SCP500`. Ajouter une pilule a SCP500s la rend
+larguable sans toucher a la config de SupplyDrop.
+
 ```yaml
 custom_items:
   is_enabled: true
+  source: Registered    # Registered | Pool | Both
+  base_items:
+  - SCP500              # filtre de la decouverte automatique
+  excluded: []          # references a ne jamais tirer
+  default_weight: 10
   draws: 2              # nombre de tirages par largage
   chance: 60            # chance en pourcent que chaque tirage aboutisse
   allow_duplicates: false
-  pool:
-    - reference: SCP500-Blindage
-      weight: 15
-    - reference: SCP500-Chirurgien
-      weight: 15
+  pool: []              # liste explicite, pour les sources Pool et Both
 ```
 
-`reference` accepte le **nom affiche** de l'objet (`SCP500-Blindage`) ou son
-**identifiant numerique** (`18`). Le nom est celui enregistre par le plugin
-proprietaire : pour SCP500s, c'est `display_name`, pas la cle interne.
+| `source` | Comportement |
+|---|---|
+| `Registered` | Tirage uniforme parmi tout ce que le registre expose, filtre par `base_items` |
+| `Pool` | Uniquement les references de `pool`, avec leurs poids |
+| `Both` | Union des deux. Les entrees de `pool` gardent leur poids, les autres prennent `default_weight` |
 
-Les deux profils par defaut arrivent avec un pool oriente : soin et equipement
-pour le MTF, mobilite et agressivite pour l'Insurrection. Avec `draws: 2` et
-`chance: 60`, un largage contient en moyenne **une pilule et quart**.
+Avec `draws: 2` et `chance: 60`, un largage contient en moyenne **une pilule et
+quart**, jamais deux fois la meme tant que `allow_duplicates` reste a `false`.
+
+`base_items` est ce qui empeche la decouverte de ramasser les objets
+personnalises des autres plugins. Le vider revient a tout accepter, armes
+custom comprises : un avertissement le signale au chargement.
+
+`excluded` retire une pilule precise du tirage sans quitter le mode aleatoire —
+utile pour ecarter une pilule trop punitive d'un largage MTF. Les references y
+acceptent le **nom affiche** (`SCP500-Roulette`) ou l'**identifiant numerique**.
 
 ### La dependance reste optionnelle
 
 Rien n'est requis a l'installation. `Exiled.CustomItems` n'est sonde qu'au
 premier besoin, et tout le code typé qui le touche vit dans
-`API/CustomItemBridge.cs`, isole du reste :
+`API/CustomItemBridge.cs`, isole du reste : aucune signature publique du pont
+n'expose de type de l'assembly, donc le JIT ne tente jamais de la charger avant
+que la sonde ait confirme sa presence.
 
-- assembly absente → le pool est ignore en silence, le largage classique
-  fonctionne normalement ;
-- assembly presente mais une reference du pool n'existe pas → avertissement
-  **une seule fois par round**, l'entree est ecartee du tirage ;
+- assembly absente → les objets personnalises sont ignores en silence, le
+  largage classique fonctionne normalement ;
+- filtre qui ne retient rien → avertissement **une seule fois par round** ;
+- reference explicite introuvable → avertissement une seule fois par round,
+  l'entree est ecartee du tirage ;
 - la sonde est reevaluee a chaque debut de round, donc un `reload` qui ajoute
   SCP500s est pris en compte sans redemarrage.
 
-`supplydrop list` affiche l'etat resolu du pool de chaque profil et nomme les
-references introuvables. C'est le moyen le plus rapide de verifier qu'un nom de
-pilule est correctement orthographie.
+`supplydrop list` affiche, par profil, la source active, le nombre d'objets
+retenus par la decouverte et les references explicites introuvables.
 
 ## Position du largage
 
@@ -187,6 +204,15 @@ Gitleaks scanne l'historique complet a chaque push et bloque en cas de secret
 detecte. Il est invoque en binaire plutot que via son action GitHub : l'action
 calcule une plage de commits `<precedent>^..<actuel>` qui echoue sur le commit
 initial d'un depot.
+
+## Note de version 4.3
+
+- Le tirage des objets personnalises devient aleatoire par defaut : plus de
+  liste predefinie, le registre d'Exiled.CustomItems est interroge a chaque
+  largage et filtre par `base_items`.
+- `source` permet de revenir a une liste explicite (`Pool`) ou de melanger les
+  deux (`Both`).
+- `excluded` ecarte une pilule precise sans quitter le mode aleatoire.
 
 ## Note de version 4.2
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using CommandSystem;
 using NorthwoodLib.Pools;
@@ -65,10 +66,10 @@ namespace SupplyDrop.Commands
         {
             CustomDrop custom = profile.CustomItems;
 
-            if (custom is null || custom.Pool is null || custom.Pool.Count == 0)
+            if (custom is null)
                 return;
 
-            if (!custom.IsEnabled)
+            if (!custom.IsEnabled || custom.Draws <= 0)
             {
                 builder.AppendLine("      objets personnalises : desactives");
                 return;
@@ -76,26 +77,49 @@ namespace SupplyDrop.Commands
 
             if (!CustomItemBridge.Available)
             {
-                builder.AppendLine("      objets personnalises : Exiled.CustomItems n'est pas charge, pool ignore");
+                builder.AppendLine("      objets personnalises : Exiled.CustomItems n'est pas charge, ignores");
                 return;
             }
 
-            int resolved = 0;
+            int candidates = 0;
 
-            foreach (CustomDropItem entry in custom.Pool)
+            if (custom.Source != CustomDropSource.Registered && custom.Pool is not null)
             {
-                if (entry is null || entry.Weight <= 0)
-                    continue;
+                foreach (CustomDropItem entry in custom.Pool)
+                {
+                    if (entry is null || entry.Weight <= 0 || string.IsNullOrEmpty(entry.Reference))
+                        continue;
 
-                if (CustomItemBridge.Exists(entry.Reference))
-                    resolved++;
-                else
-                    builder.AppendLine($"      objet personnalise introuvable : {entry.Reference}");
+                    if (CustomItemBridge.Exists(entry.Reference))
+                        candidates++;
+                    else
+                        builder.AppendLine($"      reference introuvable : {entry.Reference}");
+                }
+            }
+
+            if (custom.Source != CustomDropSource.Pool)
+            {
+                List<string> found = new List<string>(48);
+                CustomItemBridge.Collect(found, custom.BaseItems);
+
+                int excluded = 0;
+
+                foreach (string reference in found)
+                {
+                    if (custom.Excluded is not null && custom.Excluded.Contains(reference))
+                        excluded++;
+                }
+
+                candidates += found.Count - excluded;
+
+                builder.AppendLine(
+                    $"      decouverte automatique : {found.Count - excluded} objet(s) retenu(s) " +
+                    $"sur {found.Count} enregistre(s), {excluded} exclu(s)");
             }
 
             builder.AppendLine(
-                $"      objets personnalises : {custom.Draws} tirage(s) a {custom.Chance}%, " +
-                $"{resolved}/{custom.Pool.Count} reference(s) resolue(s)");
+                $"      objets personnalises : source {custom.Source}, {custom.Draws} tirage(s) a {custom.Chance}%, " +
+                $"{candidates} candidat(s)");
         }
     }
 }

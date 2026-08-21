@@ -19,8 +19,12 @@ namespace SupplyDrop.API
         private readonly Config config;
         private readonly Dictionary<string, DropState> states = new Dictionary<string, DropState>();
         private readonly List<CoroutineHandle> pending = new List<CoroutineHandle>(8);
-        private readonly List<CustomDropItem> customPool = new List<CustomDropItem>(16);
+        private readonly List<string> customNames = new List<string>(48);
+        private readonly List<int> customWeights = new List<int>(48);
+        private readonly List<string> discovered = new List<string>(48);
         private readonly HashSet<string> unresolvedCustomItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        private bool warnedEmptyRegistry;
 
         private CoroutineHandle scheduler;
         private bool running;
@@ -33,6 +37,7 @@ namespace SupplyDrop.API
 
             states.Clear();
             unresolvedCustomItems.Clear();
+            warnedEmptyRegistry = false;
             CustomItemBridge.Reset();
 
             foreach (DropProfile profile in config.Profiles)
@@ -62,7 +67,9 @@ namespace SupplyDrop.API
 
             pending.Clear();
             states.Clear();
-            customPool.Clear();
+            customNames.Clear();
+            customWeights.Clear();
+            discovered.Clear();
             unresolvedCustomItems.Clear();
         }
 
@@ -171,8 +178,7 @@ namespace SupplyDrop.API
                 bool hasItems = profile.Items is not null && profile.Items.Count > 0;
                 bool hasCustomItems = profile.CustomItems is not null
                     && profile.CustomItems.IsEnabled
-                    && profile.CustomItems.Pool is not null
-                    && profile.CustomItems.Pool.Count > 0;
+                    && profile.CustomItems.Draws > 0;
 
                 if (!hasItems && !hasCustomItems)
                 {
@@ -251,40 +257,31 @@ namespace SupplyDrop.API
             if (custom is null || !custom.IsEnabled || custom.Draws <= 0)
                 return 0;
 
-            if (custom.Pool is null || custom.Pool.Count == 0)
-                return 0;
-
             if (!CustomItemBridge.Available)
             {
                 if (config.Debug)
-                    Log.Debug($"Exiled.CustomItems absent, le pool du profil \"{profile.Key}\" est ignore.");
+                    Log.Debug($"Exiled.CustomItems absent, les objets personnalises du profil \"{profile.Key}\" sont ignores.");
 
                 return 0;
             }
 
-            customPool.Clear();
+            BuildCandidates(profile, custom);
 
-            foreach (CustomDropItem entry in custom.Pool)
+            if (customNames.Count == 0)
             {
-                if (entry is null || entry.Weight <= 0 || string.IsNullOrEmpty(entry.Reference))
-                    continue;
-
-                if (!CustomItemBridge.Exists(entry.Reference))
+                if (custom.Source != CustomDropSource.Pool && !warnedEmptyRegistry)
                 {
-                    if (unresolvedCustomItems.Add(entry.Reference))
-                        Log.Warn($"Objet personnalise \"{entry.Reference}\" introuvable, il est retire du pool du profil \"{profile.Key}\".");
-
-                    continue;
+                    warnedEmptyRegistry = true;
+                    Log.Warn(
+                        $"Aucun objet personnalise ne correspond au filtre du profil \"{profile.Key}\". " +
+                        "Verifier base_items et excluded, ou que le plugin proprietaire est bien charge.");
                 }
 
-                customPool.Add(entry);
+                return 0;
             }
 
-            if (customPool.Count == 0)
-                return 0;
-
             int chance = Mathf.Clamp(custom.Chance, 0, 100);
-            int draws = Mathf.Min(custom.Draws, custom.AllowDuplicates ? custom.Draws : customPool.Count);
+            int draws = custom.AllowDuplicates ? custom.Draws : Mathf.Min(custom.Draws, customNames.Count);
             int placed = 0;
 
             for (int i = 0; i < draws; i++)
@@ -292,43 +289,118 @@ namespace SupplyDrop.API
                 if (UnityEngine.Random.Range(0, 100) >= chance)
                     continue;
 
-                CustomDropItem pick = PickWeighted();
+                int index = PickWeightedIndex();
 
-                if (pick is null)
+                if (index < 0)
                     break;
 
-                if (!custom.AllowDuplicates)
-                    customPool.Remove(pick);
+                string reference = customNames[index];
 
-                if (CustomItemBridge.Spawn(pick.Reference, Scatter(origin, profile.ScatterRadius) + lift))
+                if (!custom.AllowDuplicates)
+                {
+                    customNames.RemoveAt(index);
+                    customWeights.RemoveAt(index);
+                }
+
+                if (CustomItemBridge.Spawn(reference, Scatter(origin, profile.ScatterRadius) + lift))
                     placed++;
             }
 
-            customPool.Clear();
+            customNames.Clear();
+            customWeights.Clear();
             return placed;
         }
 
-        private CustomDropItem PickWeighted()
+        private void BuildCandidates(DropProfile profile, CustomDrop custom)
+        {
+            customNames.Clear();
+            customWeights.Clear();
+
+            if (custom.Source != CustomDropSource.Registered && custom.Pool is not null)
+            {
+                foreach (CustomDropItem entry in custom.Pool)
+                {
+                    if (entry is null || entry.Weight <= 0 || string.IsNullOrEmpty(entry.Reference))
+                        continue;
+
+                    if (!CustomItemBridge.Exists(entry.Reference))
+                    {
+                        if (unresolvedCustomItems.Add(entry.Reference))
+                            Log.Warn($"Objet personnalise \"{entry.Reference}\" introuvable, il est retire du pool du profil \"{profile.Key}\".");
+
+                        continue;
+                    }
+
+                    Append(entry.Reference, entry.Weight);
+                }
+            }
+
+            if (custom.Source == CustomDropSource.Pool)
+                return;
+
+            int weight = Mathf.Max(1, custom.DefaultWeight);
+
+            discovered.Clear();
+            CustomItemBridge.Collect(discovered, custom.BaseItems);
+
+            foreach (string reference in discovered)
+            {
+                if (IsExcluded(custom, reference))
+                    continue;
+
+                Append(reference, weight);
+            }
+
+            discovered.Clear();
+        }
+
+        private void Append(string reference, int weight)
+        {
+            foreach (string existing in customNames)
+            {
+                if (string.Equals(existing, reference, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+
+            customNames.Add(reference);
+            customWeights.Add(weight);
+        }
+
+        private static bool IsExcluded(CustomDrop custom, string reference)
+        {
+            if (custom.Excluded is null || custom.Excluded.Count == 0)
+                return false;
+
+            foreach (string excluded in custom.Excluded)
+            {
+                if (string.Equals(excluded, reference, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private int PickWeightedIndex()
         {
             int total = 0;
 
-            foreach (CustomDropItem entry in customPool)
-                total += entry.Weight;
+            foreach (int weight in customWeights)
+                total += weight;
 
             if (total <= 0)
-                return null;
+                return -1;
 
             int roll = UnityEngine.Random.Range(0, total);
 
-            foreach (CustomDropItem entry in customPool)
+            for (int i = 0; i < customWeights.Count; i++)
             {
-                roll -= entry.Weight;
+                roll -= customWeights[i];
 
                 if (roll < 0)
-                    return entry;
+                    return i;
             }
 
-            return customPool[customPool.Count - 1];
+            return customWeights.Count - 1;
         }
 
         private static Vector3 ResolvePosition(DropProfile profile, ItemType type, Vector3 anchor)
