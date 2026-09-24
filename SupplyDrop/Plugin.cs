@@ -47,6 +47,8 @@ namespace SupplyDrop
 
             PluginBus.Subscribe(BusOwner, BusTopics.TeamWiped, OnTeamWiped);
 
+            ServerEvents.ReloadedConfigs += OnReloadedConfigs;
+
             PluginDirectory.Register(this, Capability.Bus);
 
             base.OnEnabled();
@@ -54,14 +56,18 @@ namespace SupplyDrop
 
         public override void OnDisabled()
         {
-            ServerEvents.RoundStarted -= serverHandlers.OnRoundStarted;
-            ServerEvents.RoundEnded -= serverHandlers.OnRoundEnded;
-            ServerEvents.RestartingRound -= serverHandlers.OnRestartingRound;
-            ServerEvents.WaitingForPlayers -= serverHandlers.OnWaitingForPlayers;
+            if (serverHandlers is not null)
+            {
+                ServerEvents.RoundStarted -= serverHandlers.OnRoundStarted;
+                ServerEvents.RoundEnded -= serverHandlers.OnRoundEnded;
+                ServerEvents.RestartingRound -= serverHandlers.OnRestartingRound;
+                ServerEvents.WaitingForPlayers -= serverHandlers.OnWaitingForPlayers;
+            }
 
             Service?.Stop();
 
             PluginBus.UnsubscribeOwner(BusOwner);
+            ServerEvents.ReloadedConfigs -= OnReloadedConfigs;
             PluginDirectory.Unregister(this);
 
             serverHandlers = null;
@@ -69,6 +75,18 @@ namespace SupplyDrop
             Instance = null;
 
             base.OnDisabled();
+        }
+
+        private void OnReloadedConfigs()
+        {
+            try
+            {
+                ValidateConfig();
+            }
+            catch (Exception e)
+            {
+                Log.Error($"OnReloadedConfigs: {e}");
+            }
         }
 
         private void OnTeamWiped(BusMessage message)
@@ -137,7 +155,10 @@ namespace SupplyDrop
                 Config.SpawnHeightOffset = 0.5f;
             }
 
-            if (Config.Profiles is null || Config.Profiles.Count == 0)
+            if (Config.Profiles is null)
+                Config.Profiles = new List<DropProfile>();
+
+            if (Config.Profiles.Count == 0)
             {
                 Log.Warn("Aucun profil de largage configure, le plugin ne fera rien.");
                 return;

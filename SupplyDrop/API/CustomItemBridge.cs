@@ -50,6 +50,22 @@ namespace SupplyDrop.API
             }
         }
 
+        public static bool SameItem(string left, string right)
+        {
+            if (!Available || string.IsNullOrEmpty(left) || string.IsNullOrEmpty(right))
+                return false;
+
+            try
+            {
+                return SameItemCore(left, right);
+            }
+            catch (Exception e)
+            {
+                Log.Error($"CustomItemBridge.SameItem({left}, {right}): {e}");
+                return false;
+            }
+        }
+
         public static bool Spawn(string reference, Vector3 position)
         {
             if (!Available || string.IsNullOrEmpty(reference))
@@ -132,6 +148,14 @@ namespace SupplyDrop.API
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static bool ExistsCore(string reference) => ResolveCore(reference) is not null;
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool SameItemCore(string left, string right)
+        {
+            CustomItem resolved = ResolveCore(left);
+
+            return resolved is not null && ReferenceEquals(resolved, ResolveCore(right));
+        }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static bool SpawnCore(string reference, Vector3 position)

@@ -17,6 +17,20 @@ namespace SupplyDrop.Commands
 
         public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
         {
+            try
+            {
+                return Run(arguments, sender, out response);
+            }
+            catch (Exception e)
+            {
+                Log.Error($"supplydrop call: {e}");
+                response = "Erreur interne, voir la console serveur.";
+                return false;
+            }
+        }
+
+        private bool Run(ArraySegment<string> arguments, ICommandSender sender, out string response)
+        {
             if (!SupplyDropCommand.CheckAccess(sender, out string error))
             {
                 response = error;

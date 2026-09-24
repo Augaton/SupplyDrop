@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using CommandSystem;
+using Exiled.API.Features;
 using NorthwoodLib.Pools;
 using SupplyDrop.API;
 
@@ -16,6 +17,20 @@ namespace SupplyDrop.Commands
         public string Description => "Liste les profils de largage configures.";
 
         public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
+        {
+            try
+            {
+                return Run(arguments, sender, out response);
+            }
+            catch (Exception e)
+            {
+                Log.Error($"supplydrop list: {e}");
+                response = "Erreur interne, voir la console serveur.";
+                return false;
+            }
+        }
+
+        private bool Run(ArraySegment<string> arguments, ICommandSender sender, out string response)
         {
             if (!SupplyDropCommand.CheckAccess(sender, out string error))
             {
@@ -106,7 +121,7 @@ namespace SupplyDrop.Commands
 
                 foreach (string reference in found)
                 {
-                    if (custom.Excluded is not null && custom.Excluded.Contains(reference))
+                    if (DropService.IsExcluded(custom, reference))
                         excluded++;
                 }
 

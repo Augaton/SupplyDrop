@@ -19,6 +19,7 @@ namespace SupplyDrop.API
         private readonly Config config;
         private readonly Dictionary<string, DropState> states = new Dictionary<string, DropState>();
         private readonly List<CoroutineHandle> pending = new List<CoroutineHandle>(8);
+        private readonly List<ToyLight> beacons = new List<ToyLight>(4);
         private readonly List<string> customNames = new List<string>(48);
         private readonly List<int> customWeights = new List<int>(48);
         private readonly List<string> discovered = new List<string>(48);
@@ -66,6 +67,11 @@ namespace SupplyDrop.API
                 Timing.KillCoroutines(handle);
 
             pending.Clear();
+
+            foreach (ToyLight beacon in beacons)
+                DestroyBeacon(beacon);
+
+            beacons.Clear();
             states.Clear();
             customNames.Clear();
             customWeights.Clear();
@@ -121,7 +127,7 @@ namespace SupplyDrop.API
 
                 foreach (DropProfile profile in config.Profiles)
                 {
-                    if (profile is null || !profile.IsEnabled)
+                    if (profile is null || !profile.IsEnabled || string.IsNullOrEmpty(profile.Key))
                         continue;
 
                     if (!states.TryGetValue(profile.Key, out DropState state))
@@ -230,7 +236,7 @@ namespace SupplyDrop.API
                     }
                 }
 
-                done:
+            done:
 
                 Vector3 customOrigin = forcedPosition ?? ResolvePosition(profile, ItemType.SCP500, anchor);
                 int custom = DeliverCustomItems(profile, customOrigin, lift);
@@ -360,23 +366,29 @@ namespace SupplyDrop.API
         {
             foreach (string existing in customNames)
             {
-                if (string.Equals(existing, reference, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(existing, reference, StringComparison.OrdinalIgnoreCase)
+                    || CustomItemBridge.SameItem(existing, reference))
+                {
                     return;
+                }
             }
 
             customNames.Add(reference);
             customWeights.Add(weight);
         }
 
-        private static bool IsExcluded(CustomDrop custom, string reference)
+        internal static bool IsExcluded(CustomDrop custom, string reference)
         {
             if (custom.Excluded is null || custom.Excluded.Count == 0)
                 return false;
 
             foreach (string excluded in custom.Excluded)
             {
-                if (string.Equals(excluded, reference, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(excluded, reference, StringComparison.OrdinalIgnoreCase)
+                    || CustomItemBridge.SameItem(excluded, reference))
+                {
                     return true;
+                }
             }
 
             return false;
@@ -476,13 +488,28 @@ namespace SupplyDrop.API
             beacon.Range = 12f;
             beacon.ShadowType = LightShadows.None;
 
+            beacons.Add(beacon);
+
             pending.Add(Timing.CallDelayed(Mathf.Max(1f, profile.BeaconDuration), () =>
             {
-                if (beacon?.Base is null || beacon.Base.gameObject is null)
+                beacons.Remove(beacon);
+                DestroyBeacon(beacon);
+            }));
+        }
+
+        private static void DestroyBeacon(ToyLight beacon)
+        {
+            try
+            {
+                if (beacon is null || beacon.Base == null || beacon.Base.gameObject == null)
                     return;
 
                 NetworkServer.Destroy(beacon.Base.gameObject);
-            }));
+            }
+            catch (Exception e)
+            {
+                Log.Error($"DropService.DestroyBeacon: {e}");
+            }
         }
     }
 }
